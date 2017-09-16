@@ -53,10 +53,7 @@ setup(
     author="Matthias Wutte",
     author_email='matthias.wutte@gmail.com',
     url='https://github.com/wuttem/simple-hdlc',
-    packages=[
-        'simple_hdlc',
-    ],
-    package_dir={'simple_hdlc': '.'},
+    py_modules=['simple_hdlc'],
     include_package_data=True,
     install_requires=reqs,
     zip_safe=False,

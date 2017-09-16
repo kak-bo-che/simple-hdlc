@@ -7,8 +7,9 @@ import logging
 import struct
 import time
 from threading import Thread
+import codecs
 from PyCRC.CRCCCITT import CRCCCITT
-
+ 
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class Frame(object):
             self.data.append(b)
 
     def finish(self):
-        self.crc = self.data[-2:]
+        self.crc = bytearray([self.data[-1], self.data[-2]])
         self.data = self.data[:-2]
         self.finished = True
 
@@ -53,7 +54,7 @@ class Frame(object):
         if not res:
             c1 = str(self.crc)
             c2 = str(calcCRC(self.data))
-            logger.warning("invalid crc %s != %s", c1.encode("hex"), c2.encode("hex"))
+            logger.warning("invalid crc %s != %s", codecs.encode(self.crc, "hex"), codecs.encode(calcCRC(self.data), "hex"))
             self.error = True
         return res
 
@@ -76,28 +77,28 @@ class HDLC(object):
 
     def sendFrame(self, data):
         bs = self._encode(self.toBytes(data))
-        logger.info("Sending Frame: %s", bs.encode("hex"))
+        logger.info("Sending Frame: %s", codecs.encode(bs, "hex"))
         res = self.serial.write(bs)
         logger.info("Send %s bytes", res)
 
     def _onFrame(self, frame):
         self.last_frame = frame
-        s = self.last_frame.toString()
-        logger.info("Received Frame: %s", s.encode("hex"))
+        s = self.last_frame.data
+        logger.info("Received Frame: %s", codecs.encode(s, "hex"))
         if self.frame_callback is not None:
             self.frame_callback(s)
 
     def _onError(self, frame):
         self.last_frame = frame
         s = self.last_frame.toString()
-        logger.warning("Frame Error: %s", s.encode("hex"))
+        logger.warning("Frame Error: %s", codecs.encode(frame.data, "hex"))
         if self.error_callback is not None:
             self.error_callback(s)
 
     def _readBytes(self, size):
         while size > 0:
             b = bytearray(self.serial.read(1))
-            if b < 1:
+            if len(b) < 1:
                 return False
             res = self._readByte(b[0])
             if res:
