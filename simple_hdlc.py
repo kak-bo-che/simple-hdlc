@@ -9,27 +9,33 @@ import time
 from threading import Thread
 import codecs
 from PyCRC.CRCCCITT import CRCCCITT
- 
+
 
 logger = logging.getLogger(__name__)
 
 
-def calcCRC(data):
+def calcCRC(data, little_endian=False):
+    format_char = ">H"
+
     crc = CRCCCITT("FFFF").calculate(bytes(data))
-    b = bytearray(struct.pack(">H", crc))
+    if little_endian:
+        format_char = "<H"
+
+    b = bytearray(struct.pack(format_char, crc))
     return b
 
 class Frame(object):
     STATE_READ = 0x01
     STATE_ESCAPE = 0x02
 
-    def __init__(self):
+    def __init__(self, little_endian = False):
         self.finished = False
         self.error = False
         self.state = self.STATE_READ
         self.data = bytearray()
         self.crc = bytearray()
         self.reader = None
+        self.little_endian = little_endian
 
     def __len__(self):
         return len(self.data)
@@ -45,16 +51,16 @@ class Frame(object):
             self.data.append(b)
 
     def finish(self):
-        self.crc = bytearray([self.data[-1], self.data[-2]])
+        self.crc = self.data[-2:] #bytearray([self.data[-1], self.data[-2]])
         self.data = self.data[:-2]
         self.finished = True
 
     def checkCRC(self):
-        res = bool(self.crc == calcCRC(self.data))
+        res = bool(self.crc == calcCRC(self.data, self.little_endian))
         if not res:
-            c1 = str(self.crc)
-            c2 = str(calcCRC(self.data))
-            logger.warning("invalid crc %s != %s", codecs.encode(self.crc, "hex"), codecs.encode(calcCRC(self.data), "hex"))
+            c1 = codecs.encode(self.crc, "hex")
+            c2 =  codecs.encode(calcCRC(self.data, self.little_endian), "hex")
+            logger.warning("invalid crc %s != %s",c1 ,c2)
             self.error = True
         return res
 
@@ -63,13 +69,14 @@ class Frame(object):
 
 
 class HDLC(object):
-    def __init__(self, serial):
+    def __init__(self, serial, little_endian=False):
         self.serial = serial
         self.current_frame = None
         self.last_frame = None
         self.frame_callback = None
         self.error_callback = None
         self.running = False
+        self.little_endian = little_endian
 
     @classmethod
     def toBytes(cls, data):
@@ -110,7 +117,7 @@ class HDLC(object):
             # Start or End
             if not self.current_frame or len(self.current_frame) < 1:
                 # Start
-                self.current_frame = Frame()
+                self.current_frame = Frame(little_endian=self.little_endian)
             else:
                 # End
                 self.current_frame.finish()
@@ -158,11 +165,12 @@ class HDLC(object):
                     raise ValueError("Invalid Frame (CRC FAIL)")
         raise RuntimeError("readFrame timeout")
 
-    @classmethod
-    def _encode(cls, bs):
+    # @classmethod ? not using cls why was this a classmethod maybe the author
+    # was thinking @staticmethod?
+    def _encode(self, bs):
         data = bytearray()
         data.append(0x7E)
-        crc = calcCRC(bs)
+        crc = calcCRC(bs, self.little_endian)
         bs = bs + crc
         for byte in bs:
             if byte == 0x7E or byte == 0x7D:
